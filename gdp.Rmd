@@ -63,6 +63,7 @@ mean(gdpnonOECD$Ranking)
 cutpoint <- quantile(gdp3$Ranking, probs=seq(0, 1, 0.2),na.rm=T)
 gdp3$Rank.Group<-cut(gdp3$Ranking,cutpoint)
 levels(gdp3$Rank.Group)<-c(1,2,3,4,5)
+#5 stands for the highest level and 1 stands for the lowest level
 table(gdp3$Income.Group,gdp3$Rank.Group)
 ```
 ###16 countries are Lower middle income but among the 38 nations with highest GDP.
