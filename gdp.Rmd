@@ -30,29 +30,26 @@ gdp1<-gdp[1:(nrow(gdp)-sum(is.na(gdp$Ranking))),]
 ##Read in and clean country data. Noticing that we only want CountryCode and Income.Group column. 
 ```{r}
 fileurl2<-'https://d396qusza40orc.cloudfront.net/getdata%2Fdata%2FEDSTATS_Country.csv'
-download.file(fileurl2,destfile='counry.csv',method='libcurl')
+download.file(fileurl2,destfile='country.csv',method='libcurl')
 country<-read.csv('country.csv',header = T,stringsAsFactors = F)[,c(1,3)]
-#Exclude the observations which have Income.Group blank.
-country1<-subset(country,Income.Group!='')
 ```
 
 ##1. Match the data based on the country shortcode. How many of the IDs match? 
 ```{r}
-a<-match(gdp1$CountryCode,country1$CountryCode,nomatch=NA_integer_)
-length(which(a!='NA'))
+gdp2<-merge(gdp1,country,by='CountryCode')
+sum(!is.na(unique(gdp2$CountryCode)))
 ```
 ###Therefore, 189 of 190 obervations have matched IDs.
 
 ##2. Sort the data frame in descending order by GDP rank (so United States is last). What is the 13th country in the resulting data frame?
 ```{r}
-gdp2<-gdp1[order(gdp1$GDP,decreasing = F),]
-gdp2[13,]
+gdp3<-gdp2[order(gdp2$GDP,decreasing = F),]
+gdp3[13,]
 ```
 ###The 13th country is St. Kitts and Nevis.
 
 ##3. What are the average GDP rankings for the "High income: OECD" and "High income: nonOECD" groups? 
 ```{r}
-gdp3<-merge(gdp1,country1,by='CountryCode')
 gdpOECD<-subset(gdp3,gdp3$Income.Group=='High income: OECD')
 mean(gdpOECD$Ranking)
 gdpnonOECD<-subset(gdp3,gdp3$Income.Group=='High income: nonOECD')
@@ -63,9 +60,9 @@ mean(gdpnonOECD$Ranking)
 
 ##4. Cut the GDP ranking into 5 separate quantile groups. Make a table versus Income.Group. How many countries are Lower middle income but among the 38 nations with highest GDP?
 ```{r}
-gdp4<-gdp3[,c(2,5)]
-gdp4$Rank.Group<-cut(gdp4$Ranking,c(0,38,76,114,152,190))
-levels(gdp4$Rank.Group)<-c(1,2,3,4,5)
-table(gdp4$Income.Group,gdp4$Rank.Group)
+cutpoint <- quantile(gdp3$Ranking, probs=seq(0, 1, 0.2),na.rm=T)
+gdp3$Rank.Group<-cut(gdp3$Ranking,cutpoint)
+levels(gdp3$Rank.Group)<-c(1,2,3,4,5)
+table(gdp3$Income.Group,gdp3$Rank.Group)
 ```
 ###16 countries are Lower middle income but among the 38 nations with highest GDP.
