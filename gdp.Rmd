@@ -7,17 +7,16 @@ output: html_document
 
 This is the R markdown document for answering questions on Gross Domestic Product data for the 190 ranked countries. 
 
-Required packages: RCurl. Install and/or load these packages before trying the code below.
+Required packages: curl. Install and/or load these packages before trying the code below.
 ```{r}
-library(RCurl)
+library(curl)
 ```
 
 ##Read in and clean GDP data
 ```{r}
 fileurl<-'https://d396qusza40orc.cloudfront.net/getdata%2Fdata%2FGDP.csv'
 #We want the data start from the fifth line and we only want the first, third, fourth and fifth columns.
-download.file(fileurl,destfile='gdp.csv',method='libcurl')
-gdp<-read.csv('gdp.csv',skip=4,na.strings = c("..","Not available.","..Not available"),stringsAsFactors = F)
+gdp<-read.csv(curl(fileurl),skip=4,na.strings = c("..","Not available.","..Not available"),stringsAsFactors = F)
 gdp<-dplyr::select(gdp,X,X.1,X.3,X.4)
 names(gdp)<-c('CountryCode','Ranking','Economy','GDP')
 #Change the format of some of the variables and be careful with the number containing period
@@ -35,8 +34,7 @@ sum(is.na(gdp1$GDP))
 ##Read in and clean country data. Noticing that we only want CountryCode and Income.Group column. 
 ```{r}
 fileurl2<-'https://d396qusza40orc.cloudfront.net/getdata%2Fdata%2FEDSTATS_Country.csv'
-download.file(fileurl2,destfile='country.csv',method='libcurl')
-country<-read.csv('country.csv',header = T,stringsAsFactors = F)[,c(1,3)]
+country<-read.csv(curl(fileurl2),header = T,stringsAsFactors = F)[,c(1,3)]
 nrow(subset(country,country$Income.Group==''))
 #24 countries with no Income.Group
 sum(is.na(country$Income.Group))
