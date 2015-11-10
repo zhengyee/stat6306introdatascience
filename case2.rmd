@@ -1,0 +1,267 @@
+---
+title: "Case study 2"
+author: "Yi Zheng"
+date: "October 28, 2015"
+output: html_document
+---
+
+## Case Study II: Using Data Science to Define Data Science
+In this case study, we will explore on-line job postings for different positions in 'Data Science'. We are interested in using the job descriptions that employers post for data scientists to find out what a data scientist does.
+That being said, we would like to find the set of skills that are expected from data scientists. We also want to find information about what the salary ranges are, how many years of experiences are needed and so on.
+
+However, we notice that it is not an easy task because on-line job posting sites haven't yet moved to a programmatic interface that allows us to query the jobs easily. Different postings typically have little common structure. A lot of job postings are in HTML and the data of interest are intertwined with a lot of markup for formatting and rendering the postings, advertisements, etc. Therefore, we have to figure out how to extract the actual data we want by writing some useful functions.	
+We'll process the HTML documents as hierarchical structures and look for elements and sub-trees that contain the information we want.  
+We'll use the XML package mainly to manipulate the HTML elements and evaluate Xpath queries. We also need RCurl package in some cases.
+
+We also notice that many websites prohibit users from scraping contents. Therefore, we will only scrape information from www.cybercoders.com in this case study. If you want to scrape another website, you need to verify that you are permitted to do so by examining its Terms of Service.
+
+Required packages: XML, RCurl and knitr. Install and/or load these packages before trying the code below.
+```{r}
+library(XML)
+library(RCurl)
+library(knitr)
+```
+
+Now we will scrape www.cybercoders.com.
+cybercoders.com is a website that allows us to specify a search query to find jobs of interest. The list of matching job postings contains a lot of important information about each job such as the location, the salary range and a list of necessary skills. The website is well structured and the posts are pretty uniform compared with other websites, which makes it significantly easier for us to extract information across different posts on this website. The functions written for extracting information from a single job post can be applied to other job posts.
+
+Now we will discuss about each of the functions.
+The function 'cy.getPostedDate' extracts the posted date for each posting. The date posted resides in a class called 'posted' under a class called 'job-details'. The following-sibling::text() expression matches all the text nodes at the same level as the 'span' element but after it. We'll get the first of these from the R list, which is the date the job posted.
+```{r}
+cy.getPostedDate = function(doc)
+{
+  time<-xmlValue(getNodeSet(doc, 
+                      "//div[@class = 'job-details']//
+                      div[@class='posted']/
+                      span/following-sibling::text()")[[1]],
+           trim = TRUE) 
+  time
+}
+```
+
+The function 'cy.getSkillList' extracts the skills list from 'Preferred Skills' on the web pages. The content of each skill is within a 'li' (list item) element with a class attribute with value 'skill-item'. The actual text is within a 'span' element with 'skill-name' as the class attribute. We fetch all the elements directly using a single XPath expression.
+```{r}
+cy.getSkillList = function(doc)
+{
+  lis = getNodeSet(doc, "//div[@class = 'skills-section']//
+                   li[@class = 'skill-item']//
+                   span[@class = 'skill-name']")
+  lapply(lis, xmlValue)
+}
+```
+
+The function 'cy.getLocationSalary' extracts locations and salaries for each posting of job. We find the '<div>' node with a class attribute with the value 'job-info-main' and we only keep the first matching node because there is a second node in the HTML document which is identical but is not visible. We need to use 'strsplit' to get rid of "\R\N"(supposed to be uncapitalized) following by locations in the results. By using 'unlist', we can extract the second element in location, which is the exact location with spaces (The first and third elements are blank with spaces). We then use 'gsub' to remove the spaces within the location.
+```{r}
+cy.getLocationSalary = function(doc)
+{
+  rawans = xpathSApply(doc, "//div[@class = 'job-info-main'][1]/div", xmlValue)
+  ans<-strsplit(rawans,"\r\n")
+  ans[1]<-gsub("[[:space:]]", "",unlist(strsplit(rawans[1],"\r\n"))[2])
+  names(ans) = c("location", "salary")
+  ans
+}
+```
+
+
+The function 'asWords' helps remove the words which appear in an online document called stop-list (which is a list of "stop-words" that would not explain anything useful) and decompose the text into the words in each element, using spaces to separate them. The function 'cy.getFreeFormWords' first find all the 'div' nodes with the class attribute with 'job-details' and checks the length of elements inside the nodes. If the length equals to 0, it tries to include 'p' nodes (paragraph node) and check the length of elements inside the nodes. If the length still equals to 0, it shows up a warning saying "Did not find any nodes for the free form text in the documents". Then it returns the words by first using 'Xml' to extract the values from nodes and then using function 'asWords'.
+```{r}
+asWords =
+  function(txt, StopWords = readLines("http://jmlr.csail.mit.edu/papers/volume5/lewis04a/a11-smart-stop-list/english.stop"), stem = FALSE)
+  {
+    words = unlist(strsplit(txt, '[[:space:]!.,;#:()/"]+'))
+    words = words[words != ""]
+    if(stem && require(Rlibstemmer))
+      words = wordStem(words)
+    i = tolower(words) %in% tolower(StopWords)
+    words[!i]
+  }
+
+cy.getFreeFormWords = function(doc, stopWords = StopWords)
+{
+  nodes = getNodeSet(doc, "//div[@class='job-details']/
+                           div[@data-section]")
+  if(length(nodes) == 0)
+    nodes = getNodeSet(doc, "//div[@class='job-details']//p")
+  if(length(nodes) == 0)
+    warning("Did not find any nodes for the free form text in ", docName(doc))
+  words = lapply(nodes, function(x) asWords(xmlValue(x)))
+  words
+}
+```
+
+
+The function 'cy.readPost' combines the functions above into a single function and let each function performs each step. This makes each of the functions easy to read, test, maintain and adjust.  We didn't put 'cy.getLocationSalary(doc)' into the list at first for convenience.
+```{r}
+cy.readPost = function(doc, stopWords = StopWords)
+{
+  ans = list(words = cy.getFreeFormWords(doc, stopWords),
+             SkillList = cy.getSkillList(doc),
+             PostedDate = cy.getPostedDate(doc))
+  o = cy.getLocationSalary(doc)
+  ans[names(o)] = o
+  ans
+}
+```
+
+
+The function 'cy.getPostLinks' helps to find the links to job postings in the search results. We look for the 'herf' attribute value in the 'a' element with the 'div' with a class attribute with a value job-title because it is in a 'div' with a class attribute with the value 'job-details-container'. Then we can retrieve the URL of interest. 
+```{r}
+cy.getPostLinks = function(doc, baseURL = 'http://www.cybercoders.com/search/')
+{
+  if(is.character(doc))
+    doc = htmlParse(doc)
+  links = getNodeSet(doc, "//div[@class = 'job-title']/a/@href")
+  unname(getRelativeURL(as.character(links), baseURL))
+ }
+```
+
+
+The function 'cy.getNextPageLink' help to get the links to job postings in the next pages until there is no next page link. First of all, we need a parsed HTML document as input. If not, we will specify the base URL '"http://www.cybercoders.com/search"'. When we reached the last page of the results, the function will return an empty character vector as output. 
+```{r}
+cy.getNextPageLink = function(doc, baseURL = docName(doc))
+{
+  if(is.na(baseURL))
+    baseURL = "http://www.cybercoders.com/search"
+  link = getNodeSet(doc, "//a[@rel='next']/@href")
+  if(length(link) == 0) return(character())
+  else return(gsub("/./","search/",getRelativeURL(link[[1]],baseURL)))
+}
+```
+
+The function 'cyberCodersLinks' first puts the initial search query in the search page and then finds out all the job postings in search results. We use 'getForm' to submit the query and store it in 'txt'. The charcater vector 'txt' contains the HTML document as it would be received by the web browser. We then parse the HTML document and then use 'cy.getPostLinks' and 'cy.getNextPage' to find all the job links and store them in a list. 
+```{r}
+cyberCodersLinks = function(query)
+{
+  txt = getForm('http://www.cybercoders.com/search/',
+                searchterms = query,
+                searchlocation = "", 
+                newsearch = "true",
+                sorttype = '')
+  doc = htmlParse(txt, asText = T)
+  
+  posts = list()
+  while(TRUE) {
+    posts = c(posts, cy.getPostLinks(doc))
+    nextPage = cy.getNextPageLink(doc)
+    if(length(nextPage) == 0)
+      break
+    nextPage = getURLContent(nextPage)
+    doc = htmlParse(nextPage, asText = T)
+  }
+  invisible(posts)  
+}
+```
+
+Now we have all the functions we need to retrieve all the job posts on cybercoders.com for a given search query. We also have the following components to get the information from all of the job posts: we have a mechanism to submit the search query and get the first page of results, a means to extract the links to the individual job posts from a page of results, a function to read the contents of an individual job post and a way to find the next page of results, relative to the current page.
+
+We now use "Data Scientist" and "Data Science" as search queries to find all the job posts and combine them with no repeated posts. We then take a sample of 25 from all the links with random. We extract the sample links and parse the links. Finally we use 'cy.readPost' function to extract the information we want.
+In order to make the case study reproducible, we use 'set.seed(2015)' here so that we are able to knit the html with the same content here. (However, if the links on the webpages have been updated or removed as time goes by, we are not able to be sure that same outcomes will be produced.) 
+Lesson learned: We have to use lapply rather than sapply when using cy.readPost. That is because the outcomes 'dsPosts' we get by using lappy are values. If we use sapply, the outcomes are data, which may generate errors such as 'subscript out of bounds' in the future process.
+```{r}
+dataSciPosts = cyberCodersLinks("Data Scientist")
+dataSPosts = cyberCodersLinks("Data Science")
+combined = unique(c(dataSciPosts,dataSPosts))
+set.seed(2015)
+sample25<-sample(1:length(combined),25,replace = F)
+sampleLinks<-unlist(sapply(sample25, function(x) combined[x]))
+Links = sapply(sampleLinks, htmlParse)
+dsPosts = lapply(Links, cy.readPost)
+```
+
+We now extract skills from every job post. Then we try to combine some of the categories that are similar so that we are able to clean up the skills list. The first step is use 'unlist' to make the skills list a vector. Then we use 'strsplit' to separate the compound skills which contain "/", "&", "and", "or" and make them several individual items. The rules that we combine the categories are that we try to combine items standing for the same thing and containing similar spelling such as "Big Data", "Big Data Analytics" and "Big Data Analysis" and we combine them with a uniform name. We also avoid putting those have similar spelling but stand for different things such as C and C# into one category. We should also be aware that the order of combining categories. Finally we can draw a dotchart and a word cloud plot to see the key words. 
+```{r}
+cyber.DsSkills <- unlist(strsplit(unname(unlist(lapply(dsPosts,`[[`,"SkillList"))),'[/&,]+|and | or'))
+
+cyber.DsSkills[grepl('Model+',cyber.DsSkills)==TRUE] <- "Modeling"
+
+cyber.DsSkills[grepl('[Dd]ata [Aa]na+',cyber.DsSkills)==TRUE] <- "Data Analytics"
+
+cyber.DsSkills[grepl('^Big Data+',cyber.DsSkills)==TRUE] <- "Big Data Analytics"
+
+cyber.DsSkills[grepl('^Predictive+',cyber.DsSkills)==TRUE] <- "Predictive Analytics"
+
+cyber.DsSkills[grepl('Python+|Phython',cyber.DsSkills)==TRUE] <- "Python"
+ 
+cyber.DsSkills[grepl('Java+',cyber.DsSkills)==TRUE] <- "Java/JavaScript"
+ 
+cyber.DsSkills[grepl('Statist+.*',cyber.DsSkills)==TRUE] <- "Satistical Analytics"
+
+cyber.DsSkills[grepl('^([C++]|C[^#])',cyber.DsSkills)==TRUE] <- "C/C++"
+
+cyber.DsSkills[grepl('^Data Sci+',cyber.DsSkills)==TRUE] <- "Data Science"
+ 
+cyber.DsSkills[grepl('[Mm]achine Lea+',cyber.DsSkills)==TRUE] <- "Machine Learning"
+ 
+cyber.DsSkills[grepl('R [Pp]ro+|Project R',cyber.DsSkills)==TRUE] <- "R"
+ 
+cyber.DsSkills[grepl('SQL +',cyber.DsSkills)==TRUE] <- "SQL"
+
+cyber.DsSkills[grepl('^Apache+|SPARK|Spark',cyber.DsSkills)==TRUE] <- "SPARK"
+
+cyber.DsSkills[grepl('Numpy|NumPy',cyber.DsSkills)==TRUE] <- "NumPy"
+
+cyber.DsSkills[grepl('Data Mining+',cyber.DsSkills)==TRUE] <- "Data Mining"
+
+cyber.DsSkills <- table(cyber.DsSkills)
+length(cyber.DsSkills)
+i = (names(cyber.DsSkills) == "Natural Language Processing")
+if (any(i))
+  names(cyber.DsSkills)[i] = "NLP"
+windows(width=12,height=12)
+dotchart(sort((cyber.DsSkills[cyber.DsSkills > 5])), 
+         main = "Skills from Data Scientist on CyberCoders")
+```
+
+We can see the frequencies of skills from the sample from dot chart. The dot chart shows that Machine Learning, Data Mining, R, C/C++, Python, HaDoop, Java and SQL are among the top skills in the list that are expected from data scientists. We also notice that the frequencies of skills may vary based on the sample taken. We need to run the same process several times to get more accurate answers. 
+
+Here we list where the sample job posts located and we then extract the state of each location to see where the employers are located most likely.
+```{r}
+cyber.DsLocation <- unname(unlist(lapply(dsPosts,`[[`,"location")))
+cyber.DsLocation
+for (i in 1:25)
+cyber.DsLocation[i] <- (unlist(strsplit(cyber.DsLocation[i],","))[2])
+cyber.DsLocation <- as.data.frame(cyber.DsLocation)
+kable(summary(cyber.DsLocation), format = 'markdown')
+cyber.DsLocation <- table(cyber.DsLocation)
+cyber.DsLocation <- as.data.frame(cyber.DsLocation)
+names(cyber.DsLocation) <- c("State","Count")
+library(ggplot2)
+attach(cyber.DsLocation)
+ggplot(cyber.DsLocation, aes(x='',y=Count, fill=State))+labs(title="Click by sign group (05/15-05/30) Signed in",fill="Clicks")+geom_bar(width = 1,stat="identity")+coord_polar(theta="y")
+```
+
+By looking at the table and pie chart we think the state of California is where want Data Scientists most. New York and Massachusetts also want Data Scientists. We can try our luck there.
+
+Now we want to draw a plot of words extracted from text and try to find some information.
+```{r}
+cyber.Dswords = table(tolower(unlist(lapply(dsPosts,`[[`,"words"))))
+library(wordcloud)
+windows(width=12,height=12)
+wordcloud(names(cyber.Dswords), cyber.Dswords)
+```
+
+Of course the 'data' and 'scientist' would be the key words. We notice that the word 'experience' is another key word which indicates that experience of work may be critical. Words such as 'analytics', 'machine' (which stands for machine learning),'statistical' (maybe statistical analysis), 'software', 'design' (which may stand for model design or experiment design) and so on all indicate that these are the things that a potential data scientist should be expert at. The words 'team' and 'develop' may refer to some of the qualities such as teamwork and self-development that any employee should require.
+
+Now we make a list of the salaries of different posts.
+We use the following function to extract the number from each list and make them low bound and high bound separately and we then make a summary in the table using 'kable'.
+```{r}
+cy.processSalary = 
+  function(posts)
+  {
+    tmp = unname(sapply(posts,`[[`,'salary'))
+    vals = na.omit(as.numeric(unlist(strsplit(unlist(tmp), "[^0-9]+"))))*1000
+    ans = data.frame(matrix(vals, nrow=length(vals)/2, byrow=T))
+    names(ans) = c('Lower Bound', 'Higher Bound')
+    ans
+  }
+```
+
+```{r}
+sl = cy.processSalary(dsPosts)
+kable(summary(sl), format = 'markdown', caption = "Salary Summary")
+```
+
+We can see from summary that data scientists are well-paid. The median of lower bound of income is around $100,000 and the median of higher bound of income is around $150,000.
+
+To sum up, a data scientist is a highly paid job. However, the job itself is highly qualified. A data scientist should be expert at software and language such as C/C++, Python, Hadoop, R and SQL. He should also know about data analysis and have a knowledge about statistics and predictive analytics. He should also have the ability to be an expert at Machine Learning and Data Mining. Besides, job experience would also be taken into account. We also figure out data scientists are wanted everywhere nationwide especially in CA. If we are competitive enough, there's chance that we can make a good living as data scientists.
+
