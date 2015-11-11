@@ -227,7 +227,7 @@ cyber.DsLocation <- as.data.frame(cyber.DsLocation)
 names(cyber.DsLocation) <- c("State","Count")
 library(ggplot2)
 attach(cyber.DsLocation)
-ggplot(cyber.DsLocation, aes(x='',y=Count, fill=State))+labs(title="Click by sign group (05/15-05/30) Signed in",fill="Clicks")+geom_bar(width = 1,stat="identity")+coord_polar(theta="y")
+ggplot(cyber.DsLocation, aes(x='',y=Count, fill=State))+labs(title="Count by States",fill="States")+geom_bar(width = 1,stat="identity")+coord_polar(theta="y")
 ```
 
 By looking at the table and pie chart we think the state of California is where want Data Scientists most. New York and Massachusetts also want Data Scientists. We can try our luck there.
