@@ -5,7 +5,7 @@ date: "November 16, 2015"
 output: html_document
 ---
 
-In this study, we are interested the dependence of the probability that a person has positive self-esteem on some of the variables we have. We will try to obtain a classification using the variables we have to see which one or ones will predict whether a person has positive self-esteem most accurately.
+In this study, we are interested the dependence of the probability that a person has positive self-esteem on some of the variables we are interested in. We will try to obtain a classification using the variables of interest to see which one or ones will predict whether a person has positive self-esteem most accurately.
 
 First of all, we will construct a new binary variable named "Esteem" which takes the value 1 for strong agreement that "I feel I am a person of worth" and 0 for agreement, disagreement, or strong disagreement. We will also do log transformation on variable "income2005". Since there's no missing value in the data set, we don't have to worry about the imputation. 
 
@@ -22,16 +22,16 @@ esdata$Esteem <- as.factor(esdata$Esteem)
 esdata$LIncome2005 <- log(esdata$Income2005)
 ```
 
-Now we need to divide the data into test and training data sets. We will create a new column called "train" and assign 1 or 0 in 80/20 proportion via random uniform distribution. In order to make the study reproducible, we need to set the random seed. Then we do data partition and create two data sets called "trainesdata" and "testesdata".
+Now we need to divide the data into test and training data sets. We will create a new column called "train" and assign 1 or 0 in 80/20 proportion via random uniform distribution. In order to make the study reproducible, we need to set the random seed. Then we do data partition and create two data sets called "trainesdata" and "testesdata". By viewing the distribution of gender in both data sets, we think both data sets are randomly created with no cluster effect.
 
 ```{r}
 set.seed(6306)
 esdata[,'train'] <- ifelse(runif(nrow(esdata))<0.80,1,0)
-#get col number of train / test indicator column (needed later)
 trainColNum <- grep('train',names(esdata))
-#separate training and test sets and remove training column before modeling
 trainesdata <- esdata[esdata$train==1,-trainColNum]
+summary(trainesdata$Gender)
 testesdata <- esdata[esdata$train==0,-trainColNum]
+summary(testesdata$Gender)
 ```
 
 We include all the variables of interest to perform an logistic regression using the training data.
@@ -42,10 +42,10 @@ summary(esglm)
 exp(cbind(OR = coef(esglm), confint(esglm)))
 ```
 
-We can see from the result that the logit of esteem is associated with AFQT most and then followed by log income 2005 and education. By comparison, gender may not have much connection to the logit of esteem. 
+We can see from the result that the logit of esteem is associated with AFQT most and then followed by the log of income in 2005 and the years of education. By comparison, gender may not have much connection to the logit of esteem. 
 A doubling of income in 2005 is associated with an increase of 10% (2^log(1.15)=1.10) in the odds of esteem. A 95% confidence interval is (2.7%, 18.5%).  
 Every unit of increase in AFQT is associated with an increase of 0.68% in the odds of esteem. A 95% confidence interval is (0.28%, 1.09%). 
-Every unit of increase in year of the education is associated with an increase of 7.89% in the odds. A 95% confidence interval is (3.06%, 12.99%). 
+Every unit of increase in years of the education is associated with an increase of 7.89% in the odds. A 95% confidence interval is (3.06%, 12.99%). 
 The odds of male (suppose male is 1 in "gender") are estimated to be 0.875 times the odds of female. A 95% confidence interval is (0.723, 1.058).
 
 We apply the logistic model which we have fit to the test data and we set the prediction value larger than 0.5 as 1 (strongly agree) and the rest as 0. Then we create a confusion table.
@@ -57,7 +57,7 @@ pred.logit[predict1>=0.5] <- '1'
 table(Predicted=pred.logit,Original=testesdata$Esteem)
 ```
 
-For the GLM, 329/515 (63.9%) of those records scored at 50% or higher were actual who are strongly agree. That's a pretty decent result.
+For the GLM, 329/515 (63.9%) of those records scored at 50% or higher are actually those who are strongly agree. That's a pretty decent result.
 
 
 We now want to do an Extensions of Linear Discriminant Analysis on training data. The required package is "HiDimDA".
@@ -66,13 +66,14 @@ We now want to do an Extensions of Linear Discriminant Analysis on training data
 library(HiDimDA)
 para <- cbind(trainesdata$LIncome2005,trainesdata$AFQT,trainesdata$Educ,trainesdata$Gender)
 lda <- Dlda(para,trainesdata$Esteem)
+print(lda)
 testesdata1 <- cbind(testesdata$LIncome2005,testesdata$AFQT,testesdata$Educ,testesdata$Gender)
 Predicted <- predict(lda,testesdata1,grpcodes=levels(testesdata$Esteem))$class  
 Original <- testesdata$Esteem
 table(Predicted,Original)
 ```
 
-LDA keeps the year of education, log income in 2005 and AFQT as classifier variables.
+LDA keeps years of education, log income in 2005 and AFQT as classifier variables (By looking at the mean of the variables in the outputs of lda).
 For the LDA, 330/515 (64.1%) of those who are predicted to be strongly agree are actually strongly agree. That gives a pretty similar result compared to GLM.
 
 We then want to perform a Regularized Discriminant Analysis on training data. The required package is "klaR".
@@ -90,7 +91,8 @@ Finally we would like to use Classification and Regression Trees on training dat
 
 ```{r}
 library(rpart)
-tree <- rpart(Esteem~LIncome2005+AFQT+Educ+Gender, data = trainesdata)
+tree <- rpart(Esteem~LIncome2005+AFQT+Educ+Gender, data = trainesdata, method = "class")
+plotcp(tree)
 pred <- rep("1",nrow(testesdata))
 for (i in 1:nrow(testesdata))
 if (testesdata$Educ[i]<13.5 && testesdata$AFQT[i]<18.2425)
@@ -98,6 +100,6 @@ pred[i] <- "0"
 table(Predicted=pred,Original=testesdata$Esteem)
 ```
 
-Classification and Regression Trees only keeps the year of education and AFQT as classifier variables. And we find 323/515 (62.7%) of those who are predicted to be strongly agree are actually strongly agree.
+Classification and Regression Trees only keeps years of education and AFQT as classifier variables. And we find 323/515 (62.7%) of those who are predicted to be strongly agree are actually strongly agree.
 
-SO far, we think that not all the variables are needed to obtain the best classification because the classification using the year of education and AFQT actually is as accurate as the one which includes all the variables.
+SO far, we think that not all the variables are needed to obtain the best classification because the classification using years of education and AFQT actually is as accurate as the one which includes all the variables. We think the combination of years of education and AFQT makes the best classifier.
